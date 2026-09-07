@@ -251,6 +251,26 @@ class StarHistoryDataTests(unittest.TestCase):
             self.assertEqual(payload["star_records"][-1]["count"], 101)
             self.assertEqual(source, "deployed Pages data")
 
+            richer_seed = make_data(100)
+            richer_seed["star_records"].append(
+                {"date": "2026/7/3 0:0:0", "count": 120}
+            )
+            seed_file.write_text(json.dumps(richer_seed), encoding="utf-8")
+            with patch.object(
+                star_history,
+                "download_json",
+                return_value=deployed,
+            ):
+                payload, source = star_history.load_best_data(
+                    repository="mdx-tom/gpt-instruct",
+                    seed_file=seed_file,
+                    deployed_url="https://mdx-tom.github.io/example/data.json",
+                )
+            self.assertEqual(len(payload["star_records"]), 3)
+            self.assertEqual(payload["star_records"][-1]["count"], 120)
+            self.assertEqual(source, "deployed Pages data + repository seed")
+
+            seed_file.write_text(json.dumps(make_data(100)), encoding="utf-8")
             with patch.object(
                 star_history, "download_json", side_effect=urllib.error.HTTPError(
                     "https://mdx-tom.github.io/example/data.json",

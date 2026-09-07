@@ -207,6 +207,36 @@ def read_json_file(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def merge_history_data(
+    deployed: Dict[str, Any],
+    seed: Dict[str, Any],
+    repository: str,
+) -> Dict[str, Any]:
+    """Keep valid seed points that a previously deployed cache may omit.
+
+    A Pages deployment can lag behind the committed cache after a repository
+    rename.  Merge by UTC timestamp while preferring the larger count when a
+    timestamp exists in both sources, then retain the deployed payload's
+    repository/logo metadata.
+    """
+    validate_data(deployed, repository)
+    validate_data(seed, repository)
+    records_by_date: Dict[datetime, Dict[str, Any]] = {}
+    for payload in (seed, deployed):
+        for record in payload["star_records"]:
+            date = parse_record_date(record["date"])
+            current = records_by_date.get(date)
+            if current is None or record["count"] >= current["count"]:
+                records_by_date[date] = copy.deepcopy(record)
+
+    merged = copy.deepcopy(deployed)
+    merged["star_records"] = [
+        records_by_date[date] for date in sorted(records_by_date)
+    ]
+    validate_data(merged, repository)
+    return merged
+
+
 def download_json(url: str) -> Dict[str, Any]:
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != "https" or not parsed.netloc:
@@ -228,6 +258,10 @@ def load_best_data(
     if deployed_url:
         try:
             deployed = validate_data(download_json(deployed_url), repository)
+            seed = validate_data(read_json_file(seed_file), repository)
+            merged = merge_history_data(deployed, seed, repository)
+            if merged["star_records"] != deployed["star_records"]:
+                return merged, "deployed Pages data + repository seed"
             return deployed, "deployed Pages data"
         except RepositoryMismatchError:
             # A repository rename leaves the old Pages deployment reachable at
